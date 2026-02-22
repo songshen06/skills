@@ -110,7 +110,8 @@ python3 scripts/akshare_api.py
 1. EastMoney（利润表/资产负债表/现金流）
 2. 有效性校验（占位空表会判定为无效）
 3. AKShare 回退（优先 `stock_financial_report_sina`，空数据再回退到 EM 报表接口）
-4. 可选空缓存重取：仅当传入 `--force-live-on-empty-cache` 时，才在“空/无效缓存”场景单次绕过缓存重取
+4. 全空自动重取：若三大财报均为空/无效，自动触发一次 live 重取（仅一次）
+5. 可选空缓存重取：显式传入 `--force-live-on-empty-cache` 时，对单表空缓存直接启用单次绕过缓存重取
 
 个股行业分类优先级（`quick_report.py`）：
 1. 申万一级直连：`akshare_api.get_sw_level1_industry(stock_code)`（按申万一级指数成分股匹配）
@@ -139,7 +140,7 @@ python3 scripts/akshare_api.py
 调用保障策略（必须遵守）：
 - 优先“可用即调用”：先探测本地文件是否存在，再动态加载函数。
 - 失败不阻塞主流程：联动失败只降级，不应导致报告生成失败。
-- 缓存优先：默认走缓存；仅当显式启用 `--force-live-on-empty-cache` 时允许单次 `__wrapped__` 强制重取。
+- 缓存优先：默认走缓存；当三表全空时自动单次 live 重取，或显式启用 `--force-live-on-empty-cache` 时对单表启用单次重取。
 - 本地夹具显式开关：仅当传入 `--use-local-fin-fixture` 时才允许读取 `scripts/cache/local_financial_fixtures.json`。
 - 行业口径统一：报告中的“所属行业”优先展示申万一级，必要时标注 LLM 推荐。
 

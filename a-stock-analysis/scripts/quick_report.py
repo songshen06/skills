@@ -1655,20 +1655,57 @@ def generate_stock_report(
         use_local_fixture=use_local_fin_fixture,
         force_live_on_empty_cache=force_live_on_empty_cache,
     )
-    _apply_income_statement_to_stock_data(data, income_df)
     balance_df = get_balance_with_fallback(
         code,
         count=4,
         use_local_fixture=use_local_fin_fixture,
         force_live_on_empty_cache=force_live_on_empty_cache,
     )
-    _apply_balance_sheet_to_stock_data(data, balance_df)
     cash_df = get_cash_with_fallback(
         code,
         count=4,
         use_local_fixture=use_local_fin_fixture,
         force_live_on_empty_cache=force_live_on_empty_cache,
     )
+
+    # Auto-recover once when all three financial statements are empty/invalid.
+    # This prevents stale empty cache from masking available upstream data.
+    if not force_live_on_empty_cache:
+        income_ok = _df_has_meaningful_value(
+            income_df,
+            ["营业总收入", "营业收入", "TOTAL_OPERATE_INCOME", "归母净利润", "PARENT_NETPROFIT"],
+        )
+        balance_ok = _df_has_meaningful_value(
+            balance_df,
+            ["资产总计", "负债合计", "TOTAL_ASSETS", "TOTAL_LIABILITIES"],
+        )
+        cash_ok = _df_has_meaningful_value(
+            cash_df,
+            ["经营活动产生的现金流量净额", "经营活动产生的现金流量", "NETCASH_OPERATE"],
+        )
+        if not (income_ok or balance_ok or cash_ok):
+            print("🔄 Financial statements empty across all sources, retrying live fetch once...")
+            income_df = get_income_with_fallback(
+                code,
+                count=4,
+                use_local_fixture=use_local_fin_fixture,
+                force_live_on_empty_cache=True,
+            )
+            balance_df = get_balance_with_fallback(
+                code,
+                count=4,
+                use_local_fixture=use_local_fin_fixture,
+                force_live_on_empty_cache=True,
+            )
+            cash_df = get_cash_with_fallback(
+                code,
+                count=4,
+                use_local_fixture=use_local_fin_fixture,
+                force_live_on_empty_cache=True,
+            )
+
+    _apply_income_statement_to_stock_data(data, income_df)
+    _apply_balance_sheet_to_stock_data(data, balance_df)
     _apply_cash_flow_to_stock_data(data, cash_df)
     _apply_profitability_trends(data, income_df, balance_df)
     _apply_financial_skill_to_stock_data(data, income_df, balance_df, cash_df)
