@@ -1,0 +1,15 @@
+# A-Stock Analysis Skill - Runtime Dependencies
+# Keep this list focused on packages imported by scripts/.
+
+# Core runtime
+pandas>=2.0.0
+numpy>=1.24.0
+requests>=2.31.0
+urllib3>=2.0.0
+akshare>=1.18.0
+
+# Development and quality
+pytest>=7.3.0
+pytest-cov>=4.0.0
+flake8>=6.0.0
+black>=23.3.0
