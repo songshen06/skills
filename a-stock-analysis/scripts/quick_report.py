@@ -169,9 +169,9 @@ Examples:
     parser.add_argument(
         '--narrative-mode',
         type=str,
-        default='rule',
+        default='agent',
         choices=['rule', 'agent', 'hybrid'],
-        help='Narrative generation mode: rule, agent, or hybrid (default: rule)',
+        help='Narrative generation mode: rule, agent, or hybrid (default: agent)',
     )
     parser.add_argument(
         '--narrative-text',

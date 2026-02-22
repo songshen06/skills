@@ -69,13 +69,13 @@ python3 scripts/quick_report.py stock 000589 "贵州轮胎" \
 点评模式（主观文案）：
 
 ```bash
-# 规则文案（默认）
-python3 scripts/quick_report.py stock 000589 "贵州轮胎" --narrative-mode rule
-
-# Agent注入文案（推荐给 Codex/OpenClaw 技能场景）
+# Agent注入文案（默认）
 python3 scripts/quick_report.py stock 000589 "贵州轮胎" \
   --narrative-mode agent \
   --narrative-file /path/to/agent_narrative.md
+
+# 规则文案（显式启用）
+python3 scripts/quick_report.py stock 000589 "贵州轮胎" --narrative-mode rule
 
 # 混合模式（规则 + Agent）
 python3 scripts/quick_report.py stock 000589 "贵州轮胎" \
@@ -210,9 +210,9 @@ python3 scripts/akshare_api.py
 3. 主要风险（1句）
 4. 执行建议（1句，含仓位或止损）
 
-推荐使用 `--narrative-mode hybrid`：
-- `rule` 负责结构化兜底
-- `agent` 只补判断句，控制 token 消耗
+默认模式为 `--narrative-mode agent`：
+- 上层 agent 注入主观点评文本，避免规则模板文案。
+- 若未注入点评文本，会自动回退到规则点评兜底。
 
 ## Troubleshooting
 
