@@ -1,0 +1,6 @@
+openai
+pysrt
+webvtt-py
+python-dotenv
+tqdm
+deep-translator
