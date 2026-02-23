@@ -118,10 +118,36 @@ def _metric_rows(report_type: str, data: Dict[str, Any]) -> List[Tuple[str, str]
     ]
 
 
+def _split_points(text: Any) -> List[str]:
+    raw = str(text or "").strip()
+    if not raw or raw == "N/A":
+        return []
+    parts = [p.strip(" -") for p in raw.replace("\n", "；").split("；")]
+    return [p for p in parts if p]
+
+
+def _core_point_lists(data: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+    bullish = _split_points(data.get("bullish_thesis"))
+    bearish = _split_points(data.get("bearish_risks"))
+    if not bullish:
+        bullish = [
+            str(data.get("bullish_point_1", "N/A")),
+            str(data.get("bullish_point_2", "N/A")),
+            str(data.get("bullish_point_3", "N/A")),
+        ]
+    if not bearish:
+        bearish = [
+            str(data.get("bearish_point_1", "N/A")),
+            str(data.get("bearish_point_2", "N/A")),
+            str(data.get("bearish_point_3", "N/A")),
+        ]
+    return bullish[:3], bearish[:3]
+
+
 def render_web_report(
     report_type: str, data: Dict[str, Any], full_markdown: str = ""
 ) -> str:
-    """Render a standalone HTML report with improved readability."""
+    """Render a standalone HTML report with modern, report-first layout."""
     name = _name_by_type(report_type, data)
     code = _code_by_type(report_type, data)
     report_date = data.get("report_date", "N/A")
@@ -132,20 +158,9 @@ def render_web_report(
     risk_description = data.get("risk_description", "N/A")
 
     rows = _metric_rows(report_type, data)
-    row_html = "".join(
-        f"<tr><th>{k}</th><td>{v}</td></tr>" for k, v in rows
-    )
+    row_html = "".join(f"<tr><th>{k}</th><td>{v}</td></tr>" for k, v in rows)
 
-    bullish = [
-        data.get("bullish_point_1", "N/A"),
-        data.get("bullish_point_2", "N/A"),
-        data.get("bullish_point_3", "N/A"),
-    ]
-    bearish = [
-        data.get("bearish_point_1", "N/A"),
-        data.get("bearish_point_2", "N/A"),
-        data.get("bearish_point_3", "N/A"),
-    ]
+    bullish, bearish = _core_point_lists(data)
     bullish_html = "".join(f"<li>{item}</li>" for item in bullish)
     bearish_html = "".join(f"<li>{item}</li>" for item in bearish)
 
@@ -156,7 +171,7 @@ def render_web_report(
     current_idx = 100.0
     target_idx_raw = (target / current * 100) if current > 0 else 100.0
     target_idx = max(0.0, min(200.0, target_idx_raw))
-    score_labels = ["估值", "质量", "趋势", "风险管理"]
+    score_labels = ["估值性价比", "经营质量", "趋势结构", "风险控制"]
     score_values = _score_pack(report_type, data)
     industry = str(data.get("industry", "待补充"))
     sub_industry = str(data.get("sub_industry", "待补充"))
@@ -173,6 +188,10 @@ def render_web_report(
 
     hero_value_label = "当前价格" if report_type == "stock" else "当前点位"
     hero_value = _fmt_num(current)
+    risk_company = str(data.get("company_specific_risks", "暂无")).split("；")[0]
+    risk_industry = str(data.get("industry_risks", "暂无")).split("；")[0]
+    risk_macro = str(data.get("macro_risks", "暂无")).split("；")[0]
+    risk_market = str(data.get("market_risks", "暂无")).split("；")[0]
 
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -184,34 +203,35 @@ def render_web_report(
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     :root {{
-      --bg: #f3f6f9;
+      --bg: #f7f9f6;
       --panel: #ffffff;
-      --ink: #17202a;
-      --sub: #4f6070;
-      --brand: #0f4c81;
-      --brand-2: #136f9f;
-      --good: #0f8b5f;
-      --risk: #ba3d2b;
-      --line: #d5dde5;
+      --ink: #15221f;
+      --sub: #576a63;
+      --brand: #0e6b63;
+      --brand-2: #0b4f49;
+      --good: #1b8e5f;
+      --risk: #bf4b36;
+      --line: #d7e1db;
+      --accent: #d98a2f;
     }}
     * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
       color: var(--ink);
-      font-family: "IBM Plex Sans", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-family: "Manrope", "PingFang SC", "Microsoft YaHei", sans-serif;
       background:
-        radial-gradient(1000px 380px at -10% -5%, #dbeaf8 0%, transparent 60%),
-        radial-gradient(900px 320px at 120% 0%, #e4eff7 0%, transparent 58%),
+        radial-gradient(1000px 380px at -10% -5%, #d8efe7 0%, transparent 60%),
+        radial-gradient(900px 320px at 120% 0%, #f4e4cf 0%, transparent 58%),
         var(--bg);
     }}
-    .wrap {{ max-width: 1140px; margin: 0 auto; padding: 24px; }}
+    .wrap {{ max-width: 1160px; margin: 0 auto; padding: 24px; }}
     .hero {{
       border: 1px solid var(--line);
-      border-radius: 18px;
-      background: linear-gradient(135deg, #0f4c81 0%, #145f92 45%, #1f779f 100%);
-      color: #f8fbff;
-      padding: 22px;
-      box-shadow: 0 18px 30px rgba(17, 48, 77, 0.18);
+      border-radius: 20px;
+      background: linear-gradient(140deg, #0d5f57 0%, #0f6f66 48%, #227a67 100%);
+      color: #f8fffd;
+      padding: 24px;
+      box-shadow: 0 18px 30px rgba(14, 58, 53, 0.2);
     }}
     .hero h1 {{ margin: 0; font-size: 34px; letter-spacing: 0.2px; }}
     .meta {{ margin-top: 8px; opacity: 0.95; }}
@@ -227,7 +247,7 @@ def render_web_report(
     .p-6 {{ grid-column: span 6; }}
     .p-7 {{ grid-column: span 7; }}
     .p-12 {{ grid-column: span 12; }}
-    .panel h3 {{ margin: 0 0 12px 0; font-size: 18px; }}
+    .panel h3 {{ margin: 0 0 12px 0; font-size: 18px; letter-spacing: -0.01em; }}
     .equal-card {{ min-height: 340px; display: flex; flex-direction: column; }}
     .chart-wrap {{ position: relative; height: 220px; }}
     .table-wrap {{ flex: 1; }}
@@ -241,6 +261,20 @@ def render_web_report(
     .list li {{ margin-bottom: 8px; line-height: 1.5; }}
     .bull li::marker {{ color: var(--good); }}
     .bear li::marker {{ color: var(--risk); }}
+
+    .risk-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }}
+    .risk-cell {{
+      border: 1px solid #e2e8e4;
+      border-radius: 10px;
+      padding: 10px;
+      background: #fbfdfc;
+    }}
+    .risk-cell strong {{ color: #29453e; font-size: 13px; }}
+    .risk-cell p {{ margin: 6px 0 0; font-size: 13px; color: var(--sub); line-height: 1.5; }}
 
     .tip-line {{ margin: 0 0 8px 0; }}
     .tip-good {{ color: var(--good); }}
@@ -343,7 +377,7 @@ def render_web_report(
       </div>
 
       <div class="panel p-4 equal-card">
-        <h3>目标达成视图（当前 vs 目标）</h3>
+        <h3>目标空间（当前 vs 目标）</h3>
         <div class="chart-wrap">
           <canvas id="targetBullet"></canvas>
         </div>
@@ -370,6 +404,16 @@ def render_web_report(
         <h3>催化与风险说明</h3>
         <p class="tip-line tip-good"><strong>催化因素：</strong>{catalysts}</p>
         <p class="tip-line tip-risk"><strong>风险说明：</strong>{risk_description}</p>
+      </div>
+
+      <div class="panel p-12">
+        <h3>风险矩阵（定性）</h3>
+        <div class="risk-grid">
+          <div class="risk-cell"><strong>公司层面</strong><p>{risk_company}</p></div>
+          <div class="risk-cell"><strong>行业层面</strong><p>{risk_industry}</p></div>
+          <div class="risk-cell"><strong>宏观层面</strong><p>{risk_macro}</p></div>
+          <div class="risk-cell"><strong>市场层面</strong><p>{risk_market}</p></div>
+        </div>
       </div>
 
       <div class="panel p-12">
