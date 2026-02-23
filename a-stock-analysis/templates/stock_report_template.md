@@ -243,27 +243,16 @@
 ### 关键监控指标
 
 #### 财务指标
-- [ ] 季度营收增速 > {{revenue_threshold}}%
-- [ ] 净利润率 > {{profit_margin_threshold}}%
-- [ ] ROE > {{roe_threshold}}%
-- [ ] 负债率 < {{debt_threshold}}%
+{{monitor_financial_items}}
 
 #### 估值指标
-- [ ] PE处于历史{{pe_percentile}}%分位以下
-- [ ] PB处于历史{{pb_percentile}}%分位以下
-- [ ] PEG < {{peg_threshold}}
+{{monitor_valuation_items}}
 
 #### 技术指标
-- [ ] 股价站稳MA{{ma_long}}上方
-- [ ] MACD金叉形成
-- [ ] RSI脱离超买/超卖区域
-- [ ] 成交量温和放大
+{{monitor_technical_items}}
 
 #### 市场情绪
-- [ ] 北向资金持续流入
-- [ ] 融资融券余额稳定
-- [ ] 分析师评级上调
-- [ ] 机构持仓增加
+{{monitor_sentiment_items}}
 
 ### 风险提示
 

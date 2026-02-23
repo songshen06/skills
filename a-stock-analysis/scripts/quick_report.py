@@ -169,9 +169,9 @@ Examples:
     parser.add_argument(
         '--narrative-mode',
         type=str,
-        default='agent',
+        default='rule',
         choices=['rule', 'agent', 'hybrid'],
-        help='Narrative generation mode: rule, agent, or hybrid (default: agent)',
+        help='Narrative generation mode: rule, agent, or hybrid (default: rule)',
     )
     parser.add_argument(
         '--narrative-text',
@@ -1158,6 +1158,144 @@ def _apply_profitability_trends(data: dict, income_df, balance_df):
         data["roa_change"] = f"{(roa_1 - roa_2):+.2f}pct"
 
 
+def _fmt_pct(value: float) -> str:
+    return f"{value:.2f}%"
+
+
+def _parse_pct_like(value):
+    text = str(value).replace("%", "").replace("+", "").strip()
+    if text in {"", "None", "nan", "数据暂缺", "N/A"}:
+        return None
+    return _to_float(text, 0.0)
+
+
+def _split_text_points(text: str) -> list:
+    raw = str(text or "").strip()
+    if not raw or raw == "数据暂缺":
+        return []
+    parts = [p.strip() for p in re.split(r"[；;。]", raw) if p.strip()]
+    return parts
+
+
+def _monitor_item(label: str, current: str, target: str, hit: bool) -> str:
+    mark = "x" if hit else " "
+    return f"- [{mark}] {label}（当前 {current}，目标 {target}）"
+
+
+def _build_monitor_and_risk_sections(data: dict):
+    revenue_yoy = _parse_pct_like(data.get("revenue_yoy"))
+    profit_yoy = _parse_pct_like(data.get("profit_yoy"))
+    roe = _parse_pct_like(data.get("roe"))
+    roa = _parse_pct_like(data.get("roa"))
+    net_margin = _parse_pct_like(data.get("net_margin"))
+    debt_ratio = _parse_pct_like(data.get("debt_ratio"))
+    pe_ttm = _to_float(data.get("pe_ttm"), 0.0)
+    pb = _to_float(data.get("pb"), 0.0)
+    upside = _parse_pct_like(data.get("upside_potential"))
+    current_price = _to_float(data.get("current_price"), 0.0)
+    target_price = _to_float(data.get("target_price"), 0.0)
+    ma60 = _to_float(data.get("ma60"), 0.0)
+    rsi6 = _to_float(data.get("rsi6"), 50.0)
+    volume_ratio = _to_float(data.get("volume_ratio"), 1.0)
+    turnover = _parse_pct_like(data.get("turnover"))
+    change_pct = _parse_pct_like(data.get("price_change"))
+    free_cf_yi = _to_float(str(data.get("free_cash_flow", "0")).replace("亿元", ""), 0.0)
+    fund_flow_status = str(data.get("fund_flow_status", "数据暂缺"))
+    macd_cross = str(data.get("macd_cross", "数据暂缺"))
+    risk_level = str(data.get("risk_level", "中等风险"))
+    industry = str(data.get("industry", "所属行业"))
+
+    def _disp_pct(v):
+        return _fmt_pct(v) if v is not None else "数据暂缺"
+
+    financial_items = []
+    if revenue_yoy is not None:
+        financial_items.append(_monitor_item("营收同比", _fmt_pct(revenue_yoy), ">= 8%", revenue_yoy >= 8))
+    if profit_yoy is not None:
+        financial_items.append(_monitor_item("净利润同比", _fmt_pct(profit_yoy), ">= 8%", profit_yoy >= 8))
+    if roe is not None:
+        financial_items.append(_monitor_item("ROE", _fmt_pct(roe), ">= 10%", roe >= 10))
+    if roa is not None:
+        financial_items.append(_monitor_item("ROA", _fmt_pct(roa), ">= 3%", roa >= 3))
+    if net_margin is not None:
+        financial_items.append(_monitor_item("净利率", _fmt_pct(net_margin), ">= 8%", net_margin >= 8))
+    if debt_ratio is not None:
+        financial_items.append(_monitor_item("资产负债率", _fmt_pct(debt_ratio), "<= 65%", debt_ratio <= 65))
+    if not financial_items:
+        financial_items.append("- 财务指标待补充：当前财报字段不足，建议先补齐利润表与资产负债表。")
+
+    valuation_items = [
+        _monitor_item("PE-TTM", f"{pe_ttm:.2f}", "<= 20", pe_ttm > 0 and pe_ttm <= 20),
+        _monitor_item("PB", f"{pb:.2f}", "<= 2.0", pb > 0 and pb <= 2.0),
+        _monitor_item("目标上涨空间", _disp_pct(upside), ">= 8%", (upside is not None and upside >= 8)),
+        _monitor_item("目标价相对现价", f"{target_price:.2f}/{current_price:.2f}", "目标价 >= 现价", target_price >= current_price > 0),
+    ]
+
+    technical_items = [
+        _monitor_item("股价相对MA60", f"{current_price:.2f}/{ma60:.2f}", "站上 MA60", current_price > 0 and ma60 > 0 and current_price >= ma60),
+        _monitor_item("MACD形态", macd_cross, "金叉优先", macd_cross == "金叉"),
+        _monitor_item("RSI(6)", f"{rsi6:.2f}", "20-80 区间", 20 <= rsi6 <= 80),
+        _monitor_item("量比", f"{volume_ratio:.2f}", "0.9-1.8", 0.9 <= volume_ratio <= 1.8),
+    ]
+
+    sentiment_items = [
+        _monitor_item("主力资金", fund_flow_status, "净流入优先", "流入" in fund_flow_status),
+        _monitor_item("风险等级", risk_level, "非高风险", risk_level != "高风险"),
+    ]
+    if turnover is not None:
+        sentiment_items.append(_monitor_item("换手率", _fmt_pct(turnover), "0.5%-5.0%", 0.5 <= turnover <= 5.0))
+    if change_pct is not None:
+        sentiment_items.append(_monitor_item("当日波动", _fmt_pct(change_pct), "|涨跌幅| <= 5%", abs(change_pct) <= 5))
+
+    bearish_points = _split_text_points(data.get("bearish_risks"))
+    company_risk_list = []
+    industry_risk_list = []
+    macro_risk_list = []
+    market_risk_list = []
+
+    if bearish_points:
+        company_risk_list.append(bearish_points[0])
+    if net_margin is not None and net_margin < 5:
+        company_risk_list.append(f"净利率仅 {_fmt_pct(net_margin)}，盈利缓冲偏薄")
+    if free_cf_yi < 0:
+        company_risk_list.append(f"自由现金流为负（{free_cf_yi:.2f}亿元），需关注资本开支与回款节奏")
+    if not company_risk_list:
+        company_risk_list.append("重点关注产销节奏、成本管控与项目执行偏差")
+
+    if len(bearish_points) > 1:
+        industry_risk_list.append(bearish_points[1])
+    industry_risk_list.append(f"{industry}板块估值与景气存在阶段性波动")
+
+    if (revenue_yoy is not None and revenue_yoy < 0) or (profit_yoy is not None and profit_yoy < 0):
+        macro_risk_list.append("收入或利润同比转负，需关注需求侧变化")
+    elif (revenue_yoy is not None and revenue_yoy < 5) or (profit_yoy is not None and profit_yoy < 5):
+        macro_risk_list.append("增长斜率放缓，宏观需求修复强度仍待验证")
+    else:
+        macro_risk_list.append("关注宏观利率与信用周期变化对估值中枢的影响")
+
+    if len(bearish_points) > 2:
+        market_risk_list.append(bearish_points[2])
+    if pe_ttm > 25 or pb > 3:
+        market_risk_list.append("当前估值弹性偏高，若风险偏好回落易出现估值压缩")
+    if change_pct is not None and abs(change_pct) >= 4:
+        market_risk_list.append(f"短线波动较大（当日 {change_pct:+.2f}%），建议控制交易节奏")
+    if not market_risk_list:
+        market_risk_list.append("关注市场风险偏好变化引发的估值波动")
+
+    data.update(
+        {
+            "monitor_financial_items": "\n".join(financial_items),
+            "monitor_valuation_items": "\n".join(valuation_items),
+            "monitor_technical_items": "\n".join(technical_items),
+            "monitor_sentiment_items": "\n".join(sentiment_items),
+            "company_specific_risks": "；".join(company_risk_list),
+            "industry_risks": "；".join(industry_risk_list),
+            "macro_risks": "；".join(macro_risk_list),
+            "market_risks": "；".join(market_risk_list),
+        }
+    )
+
+
 def _apply_strategy_rules(data: dict):
     """Fill strategy and monitoring fields with deterministic rule-based values."""
     price = _to_float(data.get("current_price"), 0.0)
@@ -1213,15 +1351,12 @@ def _apply_strategy_rules(data: dict):
             "peg_threshold": "1.5",
             "pe_percentile": "40" if pe_ttm > 0 and pe_ttm < 20 else ("60" if pe_ttm > 0 else "数据暂缺"),
             "pb_percentile": "35" if pb > 0 and pb < 2 else ("55" if pb > 0 else "数据暂缺"),
-            "company_specific_risks": "成本波动、订单波动、经营执行风险",
-            "industry_risks": "行业景气下行与竞争加剧风险",
-            "macro_risks": "宏观需求走弱和流动性收紧风险",
-            "market_risks": "市场情绪波动导致估值压缩风险",
             "latest_news": "近期公告与行业动态建议结合交易日持续跟踪。",
             "analyst_ratings": "| 数据暂缺 |",
             "institutional_holdings": "| 数据暂缺 |",
         }
     )
+    _build_monitor_and_risk_sections(data)
 
 
 def _apply_valuation_rules(data: dict):
@@ -1655,57 +1790,20 @@ def generate_stock_report(
         use_local_fixture=use_local_fin_fixture,
         force_live_on_empty_cache=force_live_on_empty_cache,
     )
+    _apply_income_statement_to_stock_data(data, income_df)
     balance_df = get_balance_with_fallback(
         code,
         count=4,
         use_local_fixture=use_local_fin_fixture,
         force_live_on_empty_cache=force_live_on_empty_cache,
     )
+    _apply_balance_sheet_to_stock_data(data, balance_df)
     cash_df = get_cash_with_fallback(
         code,
         count=4,
         use_local_fixture=use_local_fin_fixture,
         force_live_on_empty_cache=force_live_on_empty_cache,
     )
-
-    # Auto-recover once when all three financial statements are empty/invalid.
-    # This prevents stale empty cache from masking available upstream data.
-    if not force_live_on_empty_cache:
-        income_ok = _df_has_meaningful_value(
-            income_df,
-            ["营业总收入", "营业收入", "TOTAL_OPERATE_INCOME", "归母净利润", "PARENT_NETPROFIT"],
-        )
-        balance_ok = _df_has_meaningful_value(
-            balance_df,
-            ["资产总计", "负债合计", "TOTAL_ASSETS", "TOTAL_LIABILITIES"],
-        )
-        cash_ok = _df_has_meaningful_value(
-            cash_df,
-            ["经营活动产生的现金流量净额", "经营活动产生的现金流量", "NETCASH_OPERATE"],
-        )
-        if not (income_ok or balance_ok or cash_ok):
-            print("🔄 Financial statements empty across all sources, retrying live fetch once...")
-            income_df = get_income_with_fallback(
-                code,
-                count=4,
-                use_local_fixture=use_local_fin_fixture,
-                force_live_on_empty_cache=True,
-            )
-            balance_df = get_balance_with_fallback(
-                code,
-                count=4,
-                use_local_fixture=use_local_fin_fixture,
-                force_live_on_empty_cache=True,
-            )
-            cash_df = get_cash_with_fallback(
-                code,
-                count=4,
-                use_local_fixture=use_local_fin_fixture,
-                force_live_on_empty_cache=True,
-            )
-
-    _apply_income_statement_to_stock_data(data, income_df)
-    _apply_balance_sheet_to_stock_data(data, balance_df)
     _apply_cash_flow_to_stock_data(data, cash_df)
     _apply_profitability_trends(data, income_df, balance_df)
     _apply_financial_skill_to_stock_data(data, income_df, balance_df, cash_df)

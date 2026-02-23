@@ -473,8 +473,14 @@ def cached(data_type: str, ttl: int = None, identifier_param: str = "stock_code"
                 # 无法获取标识符，直接执行函数
                 return func(*args, **kwargs)
             
-            # 构建其他参数
-            other_params = {k: v for k, v in kwargs.items() if k != identifier_param}
+            # 构建其他参数（包含函数名与位置参数绑定，避免同 data_type 接口缓存键冲突）
+            import inspect
+            bound = inspect.signature(func).bind_partial(*args, **kwargs)
+            bound.apply_defaults()
+            other_params = {
+                k: v for k, v in bound.arguments.items() if k != identifier_param
+            }
+            other_params["__func__"] = func.__name__
             
             # 尝试从缓存获取
             cached_data = dm.get(data_type, identifier, other_params)
