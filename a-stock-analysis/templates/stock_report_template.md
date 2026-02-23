@@ -86,6 +86,7 @@
 | **PS** | {{ps}} | {{ps_percentile}} | {{ps_vs_industry}} | {{ps_eval}} |
 | **PCF** | {{pcf}} | {{pcf_percentile}} | {{pcf_vs_industry}} | {{pcf_eval}} |
 | **EV/EBITDA** | {{ev_ebitda}} | {{ev_ebitda_percentile}} | {{ev_ebitda_vs_industry}} | {{ev_ebitda_eval}} |
+| **股息率(近12月)** | {{dividend_yield}} | 数据暂缺 | 数据暂缺 | {{dividend_eval}} |
 
 ### 估值模型
 #### DCF 估值 (Discounted Cash Flow)
@@ -270,20 +271,7 @@
 
 ---
 
-## 📋 监控与跟踪 (Monitoring & Tracking)
-
-### 最新动态
-{{latest_news}}
-
-### 分析师观点汇总
-| 机构 | 评级 | 目标价 | 更新日期 |
-|------|------|--------|----------|
-{{analyst_ratings}}
-
-### 机构持仓变动
-| 机构类型 | 持仓变化 | 变动比例 | 报告期 |
-|----------|----------|----------|--------|
-{{institutional_holdings}}
+{{monitoring_tracking_section}}
 
 ---
 
@@ -346,4 +334,4 @@
 
 ---
 
-*本报告由 OpenClaw A-Stock Analysis Skill v2.0 自动生成*
+*本报告由 A stock analysis 自动生成*

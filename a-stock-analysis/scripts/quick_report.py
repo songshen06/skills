@@ -41,6 +41,12 @@ from akshare_api import get_income_statement as get_income_statement_ak
 from akshare_api import get_balance_sheet as get_balance_sheet_ak
 from akshare_api import get_cash_flow as get_cash_flow_ak
 from akshare_api import get_sw_level1_industry as get_sw_level1_industry_ak
+from akshare_api import get_dragon_tiger_dates as get_dragon_tiger_dates_ak
+from akshare_api import get_block_trade_records as get_block_trade_records_ak
+from akshare_api import get_research_reports as get_research_reports_ak
+from akshare_api import get_institute_hold_by_period as get_institute_hold_by_period_ak
+from akshare_api import get_notice_report_by_date as get_notice_report_by_date_ak
+from akshare_api import get_dividend_detail as get_dividend_detail_ak
 
 FIN_SKILL_DIR = skill_dir.parent / "analyzing-financial-statements"
 FIN_CALC_PATH = FIN_SKILL_DIR / "calculate_ratios.py"
@@ -570,6 +576,63 @@ def _apply_kline_to_stock_data(data: dict, kline_df):
             "technical_conclusion": f"短期{short_trend}，关键区间 {short_support:.2f}-{short_resistance:.2f}。",
         }
     )
+
+
+def _apply_dividend_yield_fallback(data: dict, code: str):
+    """Fill dividend yield using dividend history when realtime quote has no field."""
+    raw = str(data.get("dividend_yield", "")).strip()
+    if raw and raw not in {"数据暂缺", "None", "nan"}:
+        val = _to_float(raw.replace("%", ""), 0.0)
+        if val > 0:
+            data["dividend_yield"] = f"{val:.2f}%"
+            data["dividend_eval"] = "较高" if val >= 3 else ("一般" if val >= 1 else "偏低")
+            return
+
+    price = _to_float(data.get("current_price"), 0.0)
+    if price <= 0:
+        data["dividend_yield"] = "数据暂缺"
+        data["dividend_eval"] = "数据暂缺"
+        return
+
+    try:
+        df = get_dividend_detail_ak(code)
+    except Exception:
+        df = pd.DataFrame()
+
+    if df is None or df.empty or "派息" not in df.columns:
+        data["dividend_yield"] = "数据暂缺"
+        data["dividend_eval"] = "数据暂缺"
+        return
+
+    date_col = "除权除息日" if "除权除息日" in df.columns else ("公告日期" if "公告日期" in df.columns else None)
+    if date_col is None:
+        data["dividend_yield"] = "数据暂缺"
+        data["dividend_eval"] = "数据暂缺"
+        return
+
+    work = df.copy()
+    work[date_col] = pd.to_datetime(work[date_col], errors="coerce")
+    work["派息"] = pd.to_numeric(work["派息"], errors="coerce")
+    work = work.dropna(subset=[date_col, "派息"])
+    if "进度" in work.columns:
+        work = work[work["进度"].astype(str).str.contains("实施", na=False)]
+    cutoff = datetime.datetime.now() - datetime.timedelta(days=365)
+    work = work[work[date_col] >= cutoff]
+    if work.empty:
+        data["dividend_yield"] = "数据暂缺"
+        data["dividend_eval"] = "数据暂缺"
+        return
+
+    # Most sources use "派息(元,税前)/10股".
+    dividend_per_share = float(work["派息"].sum()) / 10.0
+    dy = (dividend_per_share / price) * 100 if price > 0 else 0.0
+    if dy <= 0:
+        data["dividend_yield"] = "数据暂缺"
+        data["dividend_eval"] = "数据暂缺"
+        return
+
+    data["dividend_yield"] = f"{dy:.2f}%"
+    data["dividend_eval"] = "较高" if dy >= 3 else ("一般" if dy >= 1 else "偏低")
 
 
 def _apply_fund_flow_to_stock_data(data: dict, fund_flow: dict):
@@ -1506,6 +1569,200 @@ def _apply_valuation_appendix_details(data: dict):
     data["relative_valuation_details"] = "\n".join(rel_lines)
 
 
+def _apply_market_appendix_sections(data: dict, code: str, kline_df):
+    """Fill appendix sections C/D/E with concise, finance-oriented market context."""
+    now = datetime.datetime.now()
+    data["report_timestamp"] = now.strftime("%Y-%m-%d %H:%M:%S")
+    data["data_date"] = data["report_timestamp"]
+    data["next_update_date"] = "按需重新运行"
+
+    # C. Historical price data: use recent 120 trading days (~6 months).
+    hist_text = "近120个交易日价格数据暂缺。"
+    if kline_df is not None and not kline_df.empty:
+        df = kline_df.copy()
+        for c in ["日期", "收盘", "最高", "最低"]:
+            if c not in df.columns:
+                df[c] = pd.NA
+        df = df.dropna(subset=["日期", "收盘"]).tail(120).copy()
+        if not df.empty:
+            close = pd.to_numeric(df["收盘"], errors="coerce").dropna()
+            high = pd.to_numeric(df["最高"], errors="coerce").dropna()
+            low = pd.to_numeric(df["最低"], errors="coerce").dropna()
+            if not close.empty:
+                start_close = float(close.iloc[0])
+                end_close = float(close.iloc[-1])
+                pct = ((end_close / start_close - 1) * 100) if start_close > 0 else 0.0
+                vol = (close.pct_change().dropna().std() * (252 ** 0.5) * 100) if len(close) > 2 else 0.0
+                rolling_max = close.cummax()
+                drawdown = ((close / rolling_max) - 1.0) * 100
+                max_dd = float(drawdown.min()) if not drawdown.empty else 0.0
+                hist_text = "\n".join(
+                    [
+                        "| 窗口 | 起始日 | 截止日 | 区间涨跌 | 区间最高 | 区间最低 | 年化波动率 | 最大回撤 |",
+                        "|------|--------|--------|----------|----------|----------|------------|----------|",
+                        f"| 近120个交易日 | {df['日期'].iloc[0]} | {df['日期'].iloc[-1]} | {pct:+.2f}% | {float(high.max()):.2f} | {float(low.min()):.2f} | {vol:.2f}% | {max_dd:.2f}% |",
+                        "",
+                        "说明：财务导向报告默认用中周期价格窗口，辅助评估估值与波动，不做短线择时主依据。",
+                    ]
+                )
+    data["historical_price_data"] = hist_text
+
+    # D. Dragon-tiger list: keep concise and low weight in finance-oriented report.
+    lhb_days = 180
+    lhb_text = "财务导向报告默认弱化龙虎榜信号（短线交易属性较强）。"
+    try:
+        lhb_df = get_dragon_tiger_dates_ak(code)
+        if lhb_df is not None and not lhb_df.empty and "交易日" in lhb_df.columns:
+            dts = pd.to_datetime(lhb_df["交易日"], errors="coerce").dropna()
+            cutoff = now - datetime.timedelta(days=lhb_days)
+            recent = dts[dts >= cutoff]
+            cnt = int(recent.shape[0])
+            latest = recent.max().strftime("%Y-%m-%d") if cnt > 0 else "无"
+            lhb_text = (
+                f"近{lhb_days}天上榜次数：**{cnt}** 次；最近上榜日：**{latest}**。"
+                " 该指标用于识别交易拥挤度，作为财务主线的辅助观察项。"
+            )
+    except Exception:
+        pass
+    data["dragon_tiger_data"] = lhb_text
+
+    # E. Block trades: summarize recent 180 days.
+    block_days = 180
+    start = (now - datetime.timedelta(days=block_days)).strftime("%Y%m%d")
+    end = now.strftime("%Y%m%d")
+    block_text = f"近{block_days}天暂无大宗交易数据。"
+    try:
+        dz_df = get_block_trade_records_ak(code, start_date=start, end_date=end)
+        if dz_df is not None and not dz_df.empty:
+            tmp = dz_df.copy()
+            for c in ["成交额", "折溢率", "成交量"]:
+                if c in tmp.columns:
+                    tmp[c] = pd.to_numeric(tmp[c], errors="coerce")
+            count = int(tmp.shape[0])
+            amt_yi = float(tmp["成交额"].fillna(0).sum() / 1e8) if "成交额" in tmp.columns else 0.0
+            prem = float(tmp["折溢率"].fillna(0).mean() * 100) if "折溢率" in tmp.columns else 0.0
+            latest_dt = str(tmp["交易日期"].max()) if "交易日期" in tmp.columns else "数据暂缺"
+            block_text = "\n".join(
+                [
+                    f"统计区间：近{block_days}天（{start} - {end}）",
+                    "",
+                    "| 指标 | 数值 |",
+                    "|------|------|",
+                    f"| 成交笔数 | {count} |",
+                    f"| 合计成交额 | {amt_yi:.2f}亿元 |",
+                    f"| 平均折溢率 | {prem:+.2f}% |",
+                    f"| 最近成交日 | {latest_dt} |",
+                ]
+            )
+    except Exception:
+        pass
+    data["block_trade_data"] = block_text
+
+
+def _recent_institute_periods(n: int = 4) -> list:
+    """Build recent institute-hold period codes like 20253 (YYYY + quarter)."""
+    now = datetime.datetime.now()
+    quarter = (now.month - 1) // 3 + 1
+    year = now.year
+    out = []
+    y, q = year, quarter
+    for _ in range(n):
+        out.append(f"{y}{q}")
+        q -= 1
+        if q == 0:
+            q = 4
+            y -= 1
+    return out
+
+
+def _build_monitoring_tracking_section(data: dict, code: str):
+    """Build monitoring section dynamically; return empty when no reliable data."""
+    code6 = str(code).zfill(6)
+    sections = []
+
+    # Latest notices: scan recent 7 days and keep top 3 for this stock.
+    notices = []
+    for i in range(7):
+        d = (datetime.datetime.now() - datetime.timedelta(days=i)).strftime("%Y%m%d")
+        try:
+            df = get_notice_report_by_date_ak(d)
+            if df is None or df.empty or "代码" not in df.columns:
+                continue
+            hit = df[df["代码"].astype(str).str.zfill(6) == code6].copy()
+            if hit.empty:
+                continue
+            hit = hit.head(3)
+            for _, row in hit.iterrows():
+                notices.append(
+                    f"- {row.get('公告日期', d)}：{row.get('公告标题', '公告')}（{row.get('公告类型', '类型未标注')}）"
+                )
+            if len(notices) >= 3:
+                break
+        except Exception:
+            continue
+    if notices:
+        sections.append("### 最新动态\n" + "\n".join(notices[:3]))
+
+    # Analyst view: research reports.
+    try:
+        r = get_research_reports_ak(code6)
+    except Exception:
+        r = pd.DataFrame()
+    if r is not None and not r.empty:
+        cols = r.columns.tolist()
+        date_col = "日期" if "日期" in cols else None
+        org_col = "机构" if "机构" in cols else None
+        rating_col = "东财评级" if "东财评级" in cols else None
+        pe_cols = [c for c in cols if "市盈率" in str(c)]
+        target_col = pe_cols[0] if pe_cols else None
+        rows = ["| 机构 | 评级 | 目标价/估值口径 | 更新日期 |", "|------|------|----------------|----------|"]
+        for _, row in r.head(5).iterrows():
+            org = row.get(org_col, "数据暂缺") if org_col else "数据暂缺"
+            rating = row.get(rating_col, "数据暂缺") if rating_col else "数据暂缺"
+            tgt = row.get(target_col, "数据暂缺") if target_col else "数据暂缺"
+            dt = row.get(date_col, "数据暂缺") if date_col else "数据暂缺"
+            rows.append(f"| {org} | {rating} | {tgt} | {dt} |")
+        sections.append("### 分析师观点汇总\n" + "\n".join(rows))
+
+    # Institutional holdings: use most recent available period.
+    inst_rows = None
+    inst_period = None
+    for p in _recent_institute_periods(4):
+        try:
+            df = get_institute_hold_by_period_ak(p)
+            if df is None or df.empty or "证券代码" not in df.columns:
+                continue
+            hit = df[df["证券代码"].astype(str).str.zfill(6) == code6].copy()
+            if hit.empty:
+                continue
+            inst_rows = hit.head(1)
+            inst_period = p
+            break
+        except Exception:
+            continue
+    if inst_rows is not None and not inst_rows.empty:
+        row = inst_rows.iloc[0]
+        inst_count = row.get("机构数", "数据暂缺")
+        inst_delta = row.get("机构数变化", "数据暂缺")
+        hold_ratio = row.get("持股比例", "数据暂缺")
+        float_ratio = row.get("占流通股比例", "数据暂缺")
+        rows = [
+            "| 机构类型 | 持仓变化 | 变动比例 | 报告期 |",
+            "|----------|----------|----------|--------|",
+            f"| 基金/机构汇总 | 机构数变化 {inst_delta} | 持股比例 {hold_ratio}%，流通占比 {float_ratio}% | {inst_period} |",
+            "",
+            f"补充：当前期机构数 {inst_count} 家。",
+        ]
+        sections.append("### 机构持仓变动\n" + "\n".join(rows))
+
+    if sections:
+        data["monitoring_tracking_section"] = (
+            "## 📋 监控与跟踪 (Monitoring & Tracking)\n\n" + "\n\n".join(sections)
+        )
+    else:
+        data["monitoring_tracking_section"] = ""
+
+
 def fill_template_missing_fields(template_path: str, data: dict, default_value: str = "数据暂缺"):
     """Fill unresolved template variables with a neutral placeholder string."""
     try:
@@ -1779,9 +2036,12 @@ def generate_stock_report(
     if isinstance(quote, dict) and "error" not in quote:
         _apply_realtime_to_stock_data(data, quote)
         data["data_period"] = f"截至 {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    _apply_dividend_yield_fallback(data, code)
     _apply_sw_industry_classification(data, code, name, quote if isinstance(quote, dict) else {})
     kline_df = get_kline_with_fallback(code)
     _apply_kline_to_stock_data(data, kline_df)
+    _apply_market_appendix_sections(data, code, kline_df)
+    _build_monitoring_tracking_section(data, code)
     fund_flow = get_fund_flow(code)
     _apply_fund_flow_to_stock_data(data, fund_flow)
     income_df = get_income_with_fallback(
@@ -2045,7 +2305,7 @@ def _rule_narrative(report_type: str, data: dict) -> str:
 
 def _agent_narrative(provided_text: str = None, narrative_file: str = None) -> str:
     if provided_text and provided_text.strip():
-        return provided_text.strip()
+        return provided_text.replace("\\n", "\n").strip()
     if narrative_file:
         path = Path(narrative_file)
         if path.exists():
@@ -2054,8 +2314,71 @@ def _agent_narrative(provided_text: str = None, narrative_file: str = None) -> s
                 return text
     env_text = os.getenv("AGENT_NARRATIVE_TEXT", "").strip()
     if env_text:
-        return env_text
+        return env_text.replace("\\n", "\n")
     raise RuntimeError("agent narrative text not provided")
+
+
+def _extract_agent_core_fields(agent_text: str) -> dict:
+    """Extract core-view fields from agent narrative text."""
+    fields = {}
+    aliases = {
+        "核心判断": "core",
+        "看多逻辑": "bullish",
+        "看空风险": "bearish",
+        "主要风险": "bearish",
+        "风险与反方逻辑": "bearish",
+        "关键催化剂": "catalyst",
+        "催化剂": "catalyst",
+        "执行建议": "action",
+    }
+    for raw_line in str(agent_text or "").splitlines():
+        line = raw_line.strip().lstrip("- ").strip()
+        if not line:
+            continue
+        m = re.match(r"^(核心判断|看多逻辑|看空风险|主要风险|风险与反方逻辑|关键催化剂|催化剂|执行建议)\s*[:：]\s*(.+)$", line)
+        if not m:
+            continue
+        key = aliases.get(m.group(1))
+        value = m.group(2).strip()
+        if key and value:
+            fields[key] = value
+    return fields
+
+
+def _apply_agent_core_to_report_data(data: dict, mode: str, narrative_text: str = None, narrative_file: str = None):
+    """Use agent narrative to override top-level core-view fields in stock template."""
+    if mode not in {"agent", "hybrid"}:
+        return
+    try:
+        text = _agent_narrative(provided_text=narrative_text, narrative_file=narrative_file)
+    except Exception:
+        return
+
+    fields = _extract_agent_core_fields(text)
+    bullish = fields.get("bullish") or fields.get("core")
+    bearish = fields.get("bearish")
+    catalyst = fields.get("catalyst")
+
+    if bullish:
+        data["bullish_thesis"] = bullish
+        parts = [p.strip() for p in re.split(r"[；;。]", bullish) if p.strip()]
+        if parts:
+            data["bullish_point_1"] = parts[0]
+            if len(parts) > 1:
+                data["bullish_point_2"] = parts[1]
+            if len(parts) > 2:
+                data["bullish_point_3"] = parts[2]
+    if bearish:
+        data["bearish_risks"] = bearish
+        parts = [p.strip() for p in re.split(r"[；;。]", bearish) if p.strip()]
+        if parts:
+            data["bearish_point_1"] = parts[0]
+            if len(parts) > 1:
+                data["bearish_point_2"] = parts[1]
+            if len(parts) > 2:
+                data["bearish_point_3"] = parts[2]
+    if catalyst:
+        data["catalysts"] = catalyst
 
 
 def build_narrative_block(
@@ -2153,6 +2476,12 @@ def main():
             report_data = generate_sector_report(
                 args.code, args.name
             )
+        _apply_agent_core_to_report_data(
+            report_data,
+            mode=args.narrative_mode,
+            narrative_text=args.narrative_text,
+            narrative_file=args.narrative_file,
+        )
         
         # 渲染报告
         if args.format == 'html':

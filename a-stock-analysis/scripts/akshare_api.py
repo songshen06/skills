@@ -285,6 +285,104 @@ def get_north_bound_top10() -> pd.DataFrame:
         logger.error(f"Failed to get north bound top10: {e}")
         return pd.DataFrame()
 
+
+@cached(data_type="dragon_tiger", ttl=1800)
+def get_dragon_tiger_dates(stock_code: str) -> pd.DataFrame:
+    """Get historical dragon-tiger list dates for a stock."""
+    if not AKSHARE_AVAILABLE:
+        return pd.DataFrame()
+    try:
+        df = ak.stock_lhb_stock_detail_date_em(symbol=str(stock_code))
+        if df is None or df.empty:
+            return pd.DataFrame()
+        return df
+    except Exception as e:
+        logger.error(f"Failed to get dragon tiger dates: {e}")
+        return pd.DataFrame()
+
+
+@cached(data_type="block_trade", ttl=1800)
+def get_block_trade_records(stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
+    """Get block trade records for a stock within date range."""
+    if not AKSHARE_AVAILABLE:
+        return pd.DataFrame()
+    try:
+        # AKShare returns full-market records; filter by stock code afterwards.
+        df = ak.stock_dzjy_mrmx(symbol="A股", start_date=start_date, end_date=end_date)
+        if df is None or df.empty:
+            return pd.DataFrame()
+        code = str(stock_code).zfill(6)
+        if "证券代码" not in df.columns:
+            return pd.DataFrame()
+        out = df[df["证券代码"].astype(str).str.zfill(6) == code].copy()
+        if out.empty:
+            return pd.DataFrame()
+        return out.reset_index(drop=True)
+    except Exception as e:
+        logger.error(f"Failed to get block trade records: {e}")
+        return pd.DataFrame()
+
+
+@cached(data_type="research_reports", ttl=1800)
+def get_research_reports(stock_code: str) -> pd.DataFrame:
+    """Get research reports for a stock."""
+    if not AKSHARE_AVAILABLE:
+        return pd.DataFrame()
+    try:
+        df = ak.stock_research_report_em(symbol=str(stock_code))
+        if df is None or df.empty:
+            return pd.DataFrame()
+        return df
+    except Exception as e:
+        logger.error(f"Failed to get research reports: {e}")
+        return pd.DataFrame()
+
+
+@cached(data_type="institute_hold", ttl=21600)
+def get_institute_hold_by_period(period: str) -> pd.DataFrame:
+    """Get institutional holding table by report period, e.g. 20253."""
+    if not AKSHARE_AVAILABLE:
+        return pd.DataFrame()
+    try:
+        df = ak.stock_institute_hold(symbol=str(period))
+        if df is None or df.empty:
+            return pd.DataFrame()
+        return df
+    except Exception as e:
+        logger.error(f"Failed to get institute hold by period: {e}")
+        return pd.DataFrame()
+
+
+@cached(data_type="notice_report", ttl=1800)
+def get_notice_report_by_date(date: str) -> pd.DataFrame:
+    """Get notice report table by date, format YYYYMMDD."""
+    if not AKSHARE_AVAILABLE:
+        return pd.DataFrame()
+    try:
+        df = ak.stock_notice_report(symbol="全部", date=str(date))
+        if df is None or df.empty:
+            return pd.DataFrame()
+        return df
+    except Exception as e:
+        # Some dates may return schema-incompatible payloads; treat as empty.
+        logger.debug(f"Notice report unavailable for {date}: {e}")
+        return pd.DataFrame()
+
+
+@cached(data_type="dividend_detail", ttl=86400)
+def get_dividend_detail(stock_code: str) -> pd.DataFrame:
+    """Get historical dividend detail for a stock."""
+    if not AKSHARE_AVAILABLE:
+        return pd.DataFrame()
+    try:
+        df = ak.stock_history_dividend_detail(symbol=str(stock_code), indicator="分红")
+        if df is None or df.empty:
+            return pd.DataFrame()
+        return df
+    except Exception as e:
+        logger.debug(f"Dividend detail unavailable for {stock_code}: {e}")
+        return pd.DataFrame()
+
 # ==================== Industry/Sector APIs ====================
 
 # ==================== Financial Statement APIs ====================
