@@ -130,49 +130,9 @@ python a-stock-analysis/scripts/quick_report.py stock 600941 "中国移动" \
 .
 ├── a-stock-analysis/
 ├── analyzing-financial-statements/
-├── reports/
-├── tools/
 ├── subtitle-embedder/
 ├── subtitle-to-article/
 ├── subtitle-translator/
 ├── whisper-cpp/
 └── yt-dlp/
-```
-
-## GitHub Pages 报告主页
-
-该仓库已支持一个简单的 HTML 报告索引主页：
-
-- 首页：`index.html`
-- 报告目录：`reports/`
-- 发布脚本：`tools/publish_report.py`
-
-### 首次启用
-
-1. GitHub 仓库设置中打开 `Pages`
-2. `Source` 选择 `Deploy from a branch`
-3. 分支选择 `main`，目录选择 `/ (root)`
-
-保存后访问：
-
-- `https://songshen06.github.io/skills/`
-
-### 每次新增一份报告
-
-在仓库根目录执行：
-
-```bash
-python tools/publish_report.py \
-  --source /绝对路径/你的报告.html \
-  --title \"报告标题\" \
-  --symbol \"股票代码\" \
-  --notes \"可选备注\"
-```
-
-然后提交并推送：
-
-```bash
-git add reports index.html reports/index.json
-git commit -m \"docs(reports): add new html report\"
-git push
 ```
