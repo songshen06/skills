@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>A-Stock Reports</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; margin: 24px; color: #1f2937; }
+    h1 { margin: 0 0 8px; }
+    .hint { color: #6b7280; margin-bottom: 18px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #e5e7eb; padding: 10px; text-align: left; vertical-align: top; }
+    th { background: #f9fafb; }
+    a { color: #2563eb; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code { background: #f3f4f6; padding: 2px 5px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>A-Stock Report Index</h1>
+  <p class="hint">每次新增 HTML 报告后，运行 <code>python tools/publish_report.py --source /path/to/report.html --title 标题</code> 自动更新本页索引。</p>
+  <table>
+    <thead>
+      <tr><th>日期</th><th>标题</th><th>代码</th><th>备注</th><th>链接</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>2026-02-23</td><td>长江电力 600900 Agent分析报告</td><td>600900</td><td>agent模式</td><td><a href="reports/20260223-152658-长江电力_600900_agent分析报告.html" target="_blank">打开报告</a></td></tr>
+    </tbody>
+  </table>
+</body>
+</html>
